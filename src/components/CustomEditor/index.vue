@@ -127,6 +127,8 @@ const suggestion = {
     } 
     */
 
+    console.log(query)
+
     // used dummy for testing perpose only
     const dummyData = [
       { id: 1, title: "John Doe", type: "user" },
