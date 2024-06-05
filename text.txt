@@ -1,0 +1,282 @@
+<template>
+  <v-text-field
+    :model-value="textFieldContent"
+    :label="label"
+    :required="required"
+    :rules="validationRules"
+    outlined
+    v-bind="$attrs"
+    v-on="listeners"
+    @click:control="focusEditor"
+    :class="{[randomId]: true, 'is-textarea': size == 'textarea', 'auto-grow': autoGrow == undefined ? false : autoGrow}"
+    :style="{'--min-height': `${minHeight||90}px`, '--max-height': `${maxHeight||90}px`}"
+  >
+    <template #default>
+      <EditorContent
+        v-if="editor"
+        :editor="editor"
+        class="editor-content"
+        @click="focusEditor"
+      />
+    </template>
+  </v-text-field>
+</template>
+
+<script lang="ts" setup>
+import {
+  ref,
+  computed,
+  onMounted,
+  onBeforeUnmount,
+  shallowRef,
+  watch,
+  nextTick
+} from "vue";
+import { Editor, EditorContent, JSONContent, VueRenderer } from "@tiptap/vue-3";
+import StarterKit from "@tiptap/starter-kit";
+import Mention, { MentionOptions } from "@tiptap/extension-mention";
+import MentionList from "./MentionList.vue";
+import tippy from "tippy.js";
+
+interface Props {
+  content: string;
+  label: string;
+  required?: boolean;
+  rules?: Array<(value: string) => boolean | string>;
+  size?: "textfield" | "textarea";
+  minHeight?: number;
+  maxHeight?: number;
+  autoGrow?: boolean;
+}
+
+const props = defineProps<Props>();
+
+const editor = shallowRef<Editor | null>(null);
+const content = ref(props.content);
+const isFocused = ref(false);
+const randomId = `input-${Math.random().toString(36).substr(2, 9)}`;
+
+const listeners = computed(() => {
+  return {
+    ...Object.keys(props).reduce((listeners, key) => {
+      if (key.startsWith("on")) {
+        listeners[key] = (props as any)[key];
+      }
+      return listeners;
+    }, {} as Record<string, any>),
+  };
+});
+
+const focusEditor = (event?: MouseEvent) => {
+  if (editor.value) {
+    if (event) {
+      event.preventDefault();
+    }
+
+    nextTick(() => {
+      editor.value?.commands.focus();
+      isFocused.value = true;
+
+      if (event) {
+        const pos = editor.value!.view.posAtCoords({
+          left: event.clientX,
+          top: event.clientY,
+        });
+
+        if (pos) {
+          editor.value!.chain().setTextSelection(pos.pos).run();
+        }
+      }
+    });
+  }
+};
+
+const suggestion = {
+  items: async ({ query }: { query: string }) => {
+    console.log(query);
+    return [];
+  },
+  render: () => {
+    let component: VueRenderer | undefined;
+    let popup: ReturnType<typeof tippy> | undefined;
+
+    return {
+      onStart: (props: any) => {
+        component = new VueRenderer(MentionList, {
+          props,
+          editor: props.editor,
+        });
+
+        if (!props.clientRect) {
+          return;
+        }
+
+        popup = tippy("body", {
+          getReferenceClientRect: props.clientRect,
+          appendTo: () => document.body,
+          content: component.element,
+          showOnCreate: true,
+          interactive: true,
+          trigger: "manual",
+          placement: "bottom-start",
+        });
+      },
+      onUpdate(props: any) {
+        component?.updateProps(props);
+        if (!props.clientRect) {
+          return;
+        }
+        popup?.[0].setProps({
+          getReferenceClientRect: props.clientRect,
+        });
+      },
+      onKeyDown(props: any) {
+        if (props.event.key === "Escape") {
+          popup?.[0].hide();
+          return true;
+        }
+        if (props.event.key === "Enter") {
+          popup?.[0].hide();
+          return true;
+        }
+        if (typeof component?.ref?.onKeyDown === "function") {
+          return component.ref?.onKeyDown(props);
+        }
+      },
+      onExit() {
+        popup?.[0].destroy();
+        component?.destroy();
+      },
+    };
+  },
+};
+
+const textFieldContent = computed(() => {
+  return content.value.replace(/<[^>]*>/g, "").trim();
+});
+
+const validationRules = computed(() => {
+  const rules = props.rules ? [...props.rules] : [];
+  if (props.required && !props.rules) {
+    rules.push((value: string) => !!value || "This field is required.");
+  }
+  return rules;
+});
+
+watch(isFocused, (value: boolean) => {
+  const input = document.querySelector(
+    "." + randomId + " .v-field__input input"
+  ) as HTMLInputElement;
+  
+  input.style.display = "block";
+  !value && input.focus();
+
+  nextTick(() => {
+    input.blur();
+    input.style.display = "none";
+  });
+});
+
+onMounted(() => {
+  editor.value = new Editor({
+    extensions: [
+      StarterKit,
+      Mention.configure({
+        HTMLAttributes: {
+          class: "mention",
+        },
+        suggestion,
+        renderHTML({
+          node,
+          HTMLAttributes,
+        }: {
+          node: JSONContent;
+          HTMLAttributes: Record<string, any>;
+        }) {
+          const { id, label } = node.attrs;
+          return [
+            "span",
+            {
+              ...HTMLAttributes,
+              "data-id": id,
+              class: "mention",
+            },
+            `@${label}`,
+          ];
+        },
+      } as MentionOptions),
+    ],
+    content: props.content,
+    onUpdate({ editor }) {
+      content.value = editor.getHTML();
+    },
+    onFocus() {
+      isFocused.value = true;
+    },
+    onBlur() {
+      isFocused.value = false;
+    },
+  });
+});
+
+onBeforeUnmount(() => {
+  if (editor.value) {
+    editor.value.destroy();
+  }
+});
+</script>
+
+<style lang="scss">
+.editor-content {
+  .ProseMirror {
+    outline: none;
+  }
+  .ProseMirror p {
+    margin: 0;
+  }
+  .mention {
+    background-color: #e0e0e0;
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+}
+
+.v-text-field:not(.is-textarea) {
+  .editor-content .ProseMirror {
+    overflow-x: auto;
+  }
+  .editor-content .ProseMirror::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.v-text-field.is-textarea {
+  .editor-content .ProseMirror {
+    min-height: var(--min-height);
+    max-height: var(--max-height);
+    overflow-y: auto;
+  }
+
+  &.auto-grow .editor-content .ProseMirror {
+    max-height: unset;
+  }
+
+  .v-label.v-field-label:not(.v-field-label--floating) {
+    top: 18%;
+  }
+}
+
+.editor-content {
+  width: 100%;
+}
+
+.v-field__input input {
+  display: none;
+  position: absolute;
+  opacity: 0;
+}
+
+.editor-content .ProseMirror {
+  white-space: pre;
+}
+</style>
