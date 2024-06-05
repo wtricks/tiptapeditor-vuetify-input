@@ -316,9 +316,22 @@ onBeforeUnmount(() => {
   }
 }
 
-.v-text-field:not(.is-textarea) {
+.v-input:not(.is-textarea) {
   .editor-content .ProseMirror {
     overflow-x: auto;
+    p,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
+    div,
+    ul,
+    li {
+      display: inline-block;
+      margin-right: 5px;
+    }
   }
   .editor-content .ProseMirror::-webkit-scrollbar {
     display: none;
