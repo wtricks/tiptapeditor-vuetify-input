@@ -55,7 +55,6 @@ const content = ref('<b>A normal message here...</b>')
 <style>
 body {
   margin: 40px;
-  background-color: beige
 }
 
 h1 {
